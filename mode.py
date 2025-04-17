@@ -8,10 +8,10 @@ import math
 
 
 @ti.func
-def random_vector(var=None):
+def random_vector(var=1):
     val = ti.sqrt(var)
-    angle = ti.random(ti.f32) * 2 * math.pi
-    v = ti.Vector([ti.cos(angle), ti.sin(angle)]) * val * ti.randn()
+    # angle = ti.random(ti.f32) * 2 * math.pi
+    v = ti.Vector([val * ti.randn(), val * ti.randn()])
     return v
 
 
@@ -78,7 +78,40 @@ class Viscek(Flock):
         self.clear_acc()
         self.compute_vel()
 
+@ti.data_oriented
+class myViscek(Flock):
+    def __init__(self, num, dt, J, nc, distant=None, topo_num=None, pos=None, vel=None, acc=None, angle=None):
+        super().__init__(num, dt, distant, topo_num, pos, vel, acc, angle)
+        self.v0 = ti.field(ti.f64, shape=())
+        self.J = J
+        self.nc = nc
+        self.forward_vel = ti.Vector.field(n=2, dtype=ti.f64, shape=self.num)
 
+    @ti.kernel
+    def check(self):
+        norm = self.velocity[0].norm()
+        self.v0[None] = norm
+
+    @ti.kernel
+    def clear_acc(self):
+        for i in range(self.num):
+            self.acceleration[i] = ti.Vector([0.0 for _ in range(2)])
+
+    @ti.kernel
+    def compute_vel(self):
+        for i in range(self.num):
+            n = self.neighbors_num[i]
+            self.forward_vel[i] = self.v0[None] * normalized(
+                self.J * (self.nc - n) * ti.Vector([0.0, 1.0]) +
+                random_vector())
+
+        for i in range(self.num):
+            self.velocity[i] = self.forward_vel[i]
+
+    def wrapped(self):
+        self.check()
+        self.clear_acc()
+        self.compute_vel()
 
 @ti.func
 def set_mag(v, mag):
@@ -141,28 +174,33 @@ class Boid(Flock):
 
 @ti.data_oriented
 class MyMode(Flock):
-    def __init__(self, num, dt, J, g, v0, distant=None, topo_num=None, pos=None, vel=None, acc=None, angle=None):
+    def __init__(self, num, dt, J1, J2, g, v0, distant=None, topo_num=None, pos=None, vel=None, acc=None, angle=None):
         super().__init__(num, dt, distant, topo_num, pos, vel, acc, angle)
-        self.J = J
+        self.J1 = J1
+        self.J2 = J2
         self.g = g
         self.v0 = v0
-
-    @ti.func
-    def clear_acc(self):
-        for i in range(self.num):
-            self.acceleration[i] = ti.Vector([0.0 for _ in range(2)])
+        self.dt = dt
     
     @ti.kernel
-    def compute_force(self):
-        self.clear_acc()
+    def compute_force(self, J1:ti.f64, J2:ti.f64):
         for i in range(self.num):
-            self.acceleration[i] += self.J/self.v0 * (self.topo_num+1 - self.neighbors_num[i])*(ti.Vector([0, 1.0]) - normalized(self.velocity[i]))
-            self.acceleration[i] += self.g/self.v0 ** 2 * (self.v0-self.velocity[i].norm()) * normalized(self.velocity[i])
-            self.acceleration[i] += random_vector(2000)
-            for index in range(self.neighbors_num[i]):
-                j = self.neighbors[i, index]
-                # self.acceleration[i] += self.J/2/self.v0 * (normalized(self.velocity[j]-self.velocity[i]))
+            F0 = J1/self.v0 * (self.topo_num+1 - self.neighbors_num[i])*(ti.Vector([0, 1.0]) - normalized(self.velocity[i]))
+            F1 = self.g/self.v0 ** 2 * (self.v0-self.velocity[i].norm()) * normalized(self.velocity[i])
+            F2 = random_vector(2 / self.dt)
+            # F3 = ti.Vector([0.0, 0.0])
+            # for index in range(self.neighbors_num[i]):
+            #    j = self.neighbors[i, index]
+            #    F3 += J2/2/self.v0 * (normalized(self.velocity[j])-normalized(self.velocity[i]))
+            self.acceleration[i] = F0 + F1 + F2
+
 
     def wrapped(self):
-        self.compute_force()
+        self.compute_force(self.J1, self.J2)
+
+    def step(self):
+        self.get_neighbors(1)
+        self.wrapped()
+        self.update()
+        self.edge()
         

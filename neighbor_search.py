@@ -122,24 +122,37 @@ class NeighborSearch:
 
     @ti.kernel
     def distant_search(self, distant: ti.f64, angle: ti.f64):
-        # print("distant", distant)
         for i in range(self.num):
             cnt = 0
             for j in range(self.num):
-                #print((self.position[i] - self.position[j]).norm() < distant, self.is_in_view(i, j, angle))
-                if (self.position[i] - self.position[j]).norm() < distant and i != j \
+                val = ti.Vector([ti.min(ti.abs(self.position[i].x - self.position[j].x), 1-ti.abs(self.position[i].x - self.position[j].x)),
+                                 ti.min(ti.abs(self.position[i].y - self.position[j].y), 1-ti.abs(self.position[i].y - self.position[j].y))
+                                 ]).norm()
+                if  val < distant and i != j \
                         and self.is_in_view(i, j, angle):
                     self.neighbors[i, cnt] = j
                     cnt += 1
             self.neighbors_num[i] = cnt
-            # print("nei", i, self.neighbors_num[i])
-            # print("in search", self.neighbors_num[i], (self.position[i] - self.position[10]).norm() < distant, self.is_in_view(i, 10, angle))
 
     @ti.func
     def is_in_view(self, i, j, view) -> ti.i32:
         flag = 1
+        pos_jx=self.position[j].x
+        pos_jy=self.position[j].y
         if view > 0.0:
-            r = self.position[j] - self.position[i]
+            if ti.abs(self.position[i].x - self.position[j].x) > 1-ti.abs(self.position[i].x - self.position[j].x):
+                if self.position[i].x<self.position[j].x:
+                    pos_jx = self.position[j].x-1
+                else:
+                    pos_jx = 1+self.position[j].x
+            if ti.abs(self.position[i].y - self.position[j].y) > 1-ti.abs(self.position[i].y - self.position[j].y):
+                if self.position[i].y<self.position[j].y:
+                    pos_jy = self.position[j].y-1
+                else:
+                    pos_jy = 1+self.position[j].y
+            pos_j = ti.Vector([pos_jx, pos_jy])
+            pos_i = self.position[i]
+            r = pos_j - pos_i
             val1 = ti.abs(ti.math.cross(self.velocity[i], r))
             val2 = ti.math.dot(self.velocity[i], r)
             angle = ti.math.atan2(val1, val2)
@@ -189,10 +202,15 @@ class NeighborSearch:
         for i in range(self.num):
             cnt = 0
             for j in range(self.num):
-                if j != i and self.is_in_view(i, j, angle):
-                    self.distant_temp[i, cnt] = (self.position[i] - self.position[j]).norm()
+                val = ti.Vector([ti.min(ti.abs(self.position[i].x - self.position[j].x), 1-ti.abs(self.position[i].x - self.position[j].x)),
+                                 ti.min(ti.abs(self.position[i].y - self.position[j].y), 1-ti.abs(self.position[i].y - self.position[j].y))
+                                 ]).norm()
+                if j != i and self.is_in_view(i, j, angle) and val < self.distant0:
+                    self.distant_temp[i, cnt] = val
                     self.index[i, cnt] = j
                     cnt += 1
+            # if i == 0:
+                # print(cnt)
             if cnt > topo_num:
                 self.k_smallest_with_indices(i, topo_num, cnt)
                 for j in range(topo_num):
@@ -202,5 +220,4 @@ class NeighborSearch:
                 for j in range(cnt):
                     self.neighbors_num[i] = cnt
                     self.neighbors[i, j] = self.index[i, j]
-            # print("in search", self.neighbors_num[i])
 

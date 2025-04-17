@@ -61,11 +61,11 @@ class Viscek(Flock):
             for index in range(n):
                 j = self.neighbors[i, index]
                 sum_vel += self.velocity[j]
-                r = self.velocity[j] - self.velocity[i]
+                r = self.position[j] - self.position[i]
                 sum_force += self.compute_distant_force(r.norm()) * normalized(r)
             self.forward_vel[i] = self.v0[None] * normalized(
                 self.J / self.v0[None] * sum_vel +
-                # self.beta * sum_force +
+                self.beta * sum_force +
                 random_vector())
 
         for i in range(self.num):

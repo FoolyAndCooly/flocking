@@ -55,6 +55,7 @@ class Boid(Flock):
                 self.acceleration[i] += alignment
                 self.acceleration[i] += separation
                 self.acceleration[i] += cohesion
+                self.velocity[i] = limit(self.velocity[i], self.max_spd)
 
     def wrapped(self):
         self.compute_force()
